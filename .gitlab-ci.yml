@@ -1,0 +1,16 @@
+image: golang:latest
+
+stages:
+#  - test
+  - build
+
+compile:
+  stage: build
+  script:
+    - mkdir -p build
+    - go build -o build/ .  # Linux build
+    - GOOS=windows GOARCH=amd64 go build -o build/ . # Windows x86 build
+    #- CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o build/ . # Mac OS X pre-arm64
+  artifacts:
+    paths:
+      - build
