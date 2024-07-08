@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/url"
 	"reflect"
-	"strings"
+	"strconv"
 
-	"github.com/alecthomas/kong"
 	"github.com/google/uuid"
 	"github.com/hashicorp/mdns"
 	"github.com/tarm/serial"
@@ -33,19 +34,92 @@ func NewEnvelope(Type string) SendEnvelope {
 	return SendEnvelope{Type: Type, Id: uuid.New()}
 }
 
-type HybridController struct {
-	stream *serial.Port
-	reader *bufio.Scanner
+//type Endpoint string
+
+type JSONLEndpoint struct {
+	Host     string
+	Port     int
+	HostPort string
 }
 
-func NewHybridController(endpoint string) HybridController {
-	hc := HybridController{}
-	c := &serial.Config{Name: endpoint, Baud: 115200}
-	sock, err := serial.OpenPort(c)
-	hc.stream = sock
-	hc.stream.Flush()
+type SerialEndpoint struct {
+	Device string
+}
+
+func ParseEndpoint(endpoint string) (interface{}, error) {
+	// note that this URL Parsing is far from ideal. But we have unit tests
+	// over there in luci_test.go
+	u, err := url.Parse(endpoint)
+	//fmt.Printf("Parsed URL: %+v %#v\n", u, u)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("could not parse '%s' as Endpoint URL: %+v", endpoint, err)
+	}
+	if len(u.Host) == 0 || len(u.Scheme) == 0 {
+		return nil, fmt.Errorf("need to provide an LUCIDAC Endpoint URL such as tcp://1.2.3.4 or serial://. Given was '%s'", endpoint)
+	}
+
+	if u.Scheme == "tcp" {
+		strport := u.Port()
+		hostname := u.Hostname()
+		if len(strport) == 0 {
+			strport = "5732" // default port
+		}
+		port, err := strconv.Atoi(strport)
+		if err != nil {
+			return nil, fmt.Errorf("expected Port as String, but understood %s as %+v", endpoint, u)
+		}
+		return JSONLEndpoint{hostname, port, u.Host}, nil
+	}
+
+	if u.Scheme == "serial" {
+		// at POSIX, serial://foo/bar will be replaced to foo/bar
+		if len(u.Host) == 0 && len(u.Path) != 0 {
+			return SerialEndpoint{u.Path}, nil
+		}
+		if len(u.Host) != 0 && len(u.Path) == 0 {
+			return SerialEndpoint{u.Host}, nil
+		}
+		return SerialEndpoint{"/" + u.Host + u.Path}, nil
+	}
+
+	return nil, fmt.Errorf("don't know how to understand %v", u)
+}
+
+type HybridController struct {
+	endpoint      string
+	endpoint_type interface{}
+	stream        io.ReadWriter // *serial.Port
+	reader        *bufio.Scanner
+}
+
+func NewHybridController(endpoint string) (*HybridController, error) {
+	endpointstruct, err := ParseEndpoint(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("NewHybridController cannot work with endpoint, %v", err)
+	}
+	hc := &HybridController{}
+	hc.endpoint = endpoint
+	hc.endpoint_type = endpointstruct
+	switch eps := endpointstruct.(type) {
+	case JSONLEndpoint:
+		//fmt.Printf("Dialing... %#v\n", eps)
+		c, err := net.Dial("tcp", eps.HostPort)
+		//fmt.Printf("Result is %#v, %#v\n", c, err)
+		if err != nil {
+			log.Fatal(err)
+		}
+		hc.stream = c
+		//fmt.Printf("Connection is open %#v\n", c)
+	case SerialEndpoint:
+		c := &serial.Config{Name: eps.Device, Baud: 115200}
+		sock, err := serial.OpenPort(c)
+		sock.Flush()
+		hc.stream = sock
+		if err != nil {
+			log.Fatal(err)
+		}
+	default:
+		return nil, fmt.Errorf("NewHybridController doesn't know what to do with %T, %#v", eps, eps)
 	}
 	hc.reader = bufio.NewScanner(hc.stream)
 
@@ -60,52 +134,29 @@ func NewHybridController(endpoint string) HybridController {
 	*/
 	// TODO: check out Peek whcih requires bufio.Reader
 
-	return hc
+	return hc, nil
 }
 
-func equals(a interface{}, b interface{}) bool {
-	ja, aerr := json.Marshal(a)
-	jb, berr := json.Marshal(b)
-
-	if aerr != nil {
-		fmt.Printf("could not marshal json: %s\n", aerr)
-		panic(ja)
-	}
-	if berr != nil {
-		fmt.Printf("could not marshal json: %s\n", aerr)
-		panic(jb)
-	}
-
-	return string(ja) == string(jb)
-}
-
-func jsonPrint(anything map[string]interface{}) {
-	//jsonData, err := json.Marshal(anything)
-	jsonData, err := json.MarshalIndent(anything, "  ", "    ")
-
-	if err != nil {
-		fmt.Printf("could not marshal json: %s\n", err)
-		return
-	}
-
-	fmt.Printf("%s\n", jsonData)
-}
-
-func (hc *HybridController) command(sent_envelope SendEnvelope) RecvEnvelope {
-	fmt.Printf("command(%+v)\n", sent_envelope)
+func (hc *HybridController) command(sent_envelope SendEnvelope) (*RecvEnvelope, error) {
+	//fmt.Printf("command(%+v)\n", sent_envelope)
 	sent_line, err := json.Marshal(sent_envelope)
 	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = hc.stream.Write(append(sent_line, []byte("\r\n")...))
-	if err != nil {
-		log.Fatal(err)
+		return nil, err //log.Fatal(err)
 	}
 
-	var recv_envelope RecvEnvelope
+	if hc.stream == nil {
+		return nil, fmt.Errorf("Cannot write on uninitialized HybridController")
+	}
+
+	_, err = hc.stream.Write(append(sent_line, []byte("\r\n")...))
+	if err != nil {
+		return nil, err
+	}
+
+	var recv_envelope = &RecvEnvelope{}
 	for hc.reader.Scan() {
 		recv_line := hc.reader.Text()
-		fmt.Printf("recv_line=%s\n", recv_line)
+		//fmt.Printf("recv_line=%s\n", recv_line)
 
 		// First test_send_env if it is just an echo
 		// Happens typically on the serial line (logging, etc)
@@ -127,16 +178,16 @@ func (hc *HybridController) command(sent_envelope SendEnvelope) RecvEnvelope {
 
 		break
 	}
-	return recv_envelope
+	return recv_envelope, nil
 }
 
-func (hc *HybridController) queryMsg(Type string, Msg map[string]interface{}) RecvEnvelope {
+func (hc *HybridController) queryMsg(Type string, Msg map[string]interface{}) (*RecvEnvelope, error) {
 	envelope := NewEnvelope(Type)
 	envelope.Msg = Msg
 	return hc.command(envelope)
 }
 
-func (hc *HybridController) query(Type string) RecvEnvelope {
+func (hc *HybridController) query(Type string) (*RecvEnvelope, error) {
 	return hc.command(NewEnvelope(Type))
 }
 
@@ -144,99 +195,15 @@ func findServers() {
 	entriesCh := make(chan *mdns.ServiceEntry, 4)
 	go func() {
 		for entry := range entriesCh {
+			// TODO, check with https://pkg.go.dev/net#LookupHost
+			// whether we can resolve that entry, similar to the python
+			// version.
+			// also make sure we collect the data back at the main function,
+			// i.e. return what is in entriesCh
 			fmt.Printf("Got new entry: %v\n", entry)
 		}
 	}()
 
 	mdns.Lookup("_lucijsonl._tcp", entriesCh)
 	close(entriesCh)
-}
-
-var CLI struct {
-	Endpoint url.URL `optional:"" short:"e" env:"LUCIDAC_ENDPOINT,LUCIDAC_URL,LUCIDAC"`
-	Detect   struct {
-	} `cmd:""`
-	Webserver struct {
-	} `cmd:""`
-	Get struct {
-		Query string `arg:"" enum:"net,entities,circuit" default:"net"`
-	} `cmd:"get" help:"Read out/export information"`
-	NetSet struct {
-		Settings map[string]string `arg:""`
-	} `cmd:"net-set" aliases:"set" help:"Set permanent settings"`
-}
-
-func treatBool(val string) any {
-	switch strings.ToLower(val) {
-	case "true":
-		return true
-	case "false":
-		return false
-	default:
-		return val
-	}
-}
-
-var Hc HybridController
-
-func main() {
-	Hc = NewHybridController("/dev/ttyACM0")
-	ctx := kong.Parse(&CLI)
-	fmt.Printf("kong Command: %s\n", ctx.Command())
-	switch ctx.Command() {
-	case "get <query>":
-
-		Hc.query("net_status")
-	case "detect":
-		findServers()
-	case "webserver":
-		StartWebserver()
-	case "net-set <settings>":
-		// naming: incoming key/value (from CLI)
-		//         outgoing key/value (towards Settings JSON structure)
-		out := make(map[string]interface{})
-		for ink, inv := range CLI.NetSet.Settings {
-			inkhead, inktail, ink_is_hierarchical := strings.Cut(ink, ".")
-			if ink_is_hierarchical {
-				if _, outv_exists := out[inkhead]; !outv_exists {
-					out[inkhead] = make(map[string]interface{})
-				}
-				out[inkhead].(map[string]interface{})[inktail] = treatBool(inv)
-			} else {
-				out[ink] = treatBool(inv)
-			}
-		}
-
-		out["no_write"] = true // to test
-
-		fmt.Printf("%+v\n", out)
-		jsonPrint(out)
-
-		proof := Hc.queryMsg("net_set", out)
-		jsonPrint(proof.Msg)
-
-		// proof to be tested against what is supposed to be like
-		// works only easily when first querying with net_get and then
-		// just making a deep equal test.
-
-	default:
-		fmt.Printf("Unexpected Command: %s\n", ctx.Command())
-
-	}
-
-	/*
-	   hc.query("net_get")
-
-	   data := map[string]interface{}{}
-	   data["hello"] = []int{1, 2, 3, 4}
-
-	   jsonData, err := json.Marshal(data)
-
-	   	if err != nil {
-	   		fmt.Printf("could not marshal json: %s\n", err)
-	   		return
-	   	}
-
-	   fmt.Printf("json data: %s\n", jsonData)
-	*/
 }

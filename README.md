@@ -24,12 +24,12 @@ permanent settings and bringing LUCIDAC onto the network. Typical use cases are
 Checked if implemented
 
 - [x] USB communication
-- [ ] TCP/IP communication
+- [x] TCP/IP communication
 - [x] mDNS discovery
-- [ ] USB Serial discovery
 - [x] basic CLI
 - [x] basic permanent settings
 - [x] basic websocket proxying
+- [ ] USB Serial discovery
 - [ ] current serial USB library does not work for Mac (at least not cross compiling, cf the gitlab-CI)
 
 ## Getting started as developer
