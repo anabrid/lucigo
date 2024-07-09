@@ -7,6 +7,20 @@ easily compiled and distributed as static binaries for all major desktop
 platforms. This makes it great for *getting started*, in particular for novices
 who cannot do well with the terminal.
 
+## Getting started as a user
+
+Just grab the [latest release](https://github.com/anabrid/lucigo/releases).
+It contains binaries ready to download for all major platforms (Mac OS X,
+MS Windows, GNU/Linux).
+
+For instance, on Linux you get started with these three commands
+
+```
+wget https://github.com/anabrid/lucigo/releases/download/latest/lucigo
+chmod 755 lucigo
+./lucigo --help
+```
+
 ## Scope
 
 The current scope of this client implementation is not to provide a full
@@ -31,11 +45,6 @@ Checked if implemented
 - [x] websocket proxying
 - [ ] USB Serial discovery
 - [ ] current serial USB library does not work for Mac (at least not cross compiling, cf the gitlab-CI)
-
-## Getting started as a user
-
-Just download the builds from an appropriate continous integration server, for
-instance (*TODO: Also provide at Github*).
 
 ## Getting started as developer
 
