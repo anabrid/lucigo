@@ -124,7 +124,7 @@ func net_set(patch map[string]string) {
 
 	jsonPrint(cur)
 }
-https://lucidac.online/
+
 type versionFlag bool
 
 func (d versionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
