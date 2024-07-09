@@ -19,3 +19,11 @@ compile:
   artifacts:
     paths:
       - build
+
+compile_using_make:
+  stage: build
+  script:
+    - make build
+  artifacts:
+    paths:
+      - build

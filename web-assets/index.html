@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+    <title>lucigo</title>
+</head>
+<body>
+    <!--
+    
+    TODO: Can make this a template which is enriched from runtime
+          with actual information. Which also can be a proper
+          redirect to the GUI, if available.
+
+          The redirect should be a meta tag with nonzero timeout so
+          browser caches don't get mad at developing.
+    
+    -->
+    <h1>LUCIGO Webserver</h1>
+    <p>This file is served by <a href="https://github.com/anabrid/lucigo">LUCIGO</a>,
+    the administrative client for the digital-analog computer
+    <a href="https://anabrid.com/lucidac">LUCIDAC</a> written by anabrid.
+    <p>Machine readable information about the hosting situation is available
+        at <a href="/.well-known/lucidac.json">/.well-known/lucidac.json</a>.
+        Typically, there is a websocket endpoint at <tt>/ws</tt>
+        and the LUCIDAC GUI files are available at <a href="/lucigui">lucigui</a>.
+        This is also where you want to head to.
+    </p>
+    <p>However, if you see this page it typically means that the Lucigui is not
+       embedded. You can, however, head over to <a href="https://lucidac.online/">lucidac.online</a>
+       and enjoy the GUI there.
+    </p>
+</body>
+</html>

@@ -28,7 +28,7 @@ Checked if implemented
 - [x] mDNS discovery
 - [x] basic CLI
 - [x] convenient permanent settings (hierarchical and shorthanded)
-- [x] basic websocket proxying
+- [x] websocket proxying
 - [ ] USB Serial discovery
 - [ ] current serial USB library does not work for Mac (at least not cross compiling, cf the gitlab-CI)
 

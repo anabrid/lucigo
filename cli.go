@@ -1,3 +1,7 @@
+// Copyright (c) 2024 anabrid GmbH
+// Contact: https://www.anabrid.com/licensing/
+// SPDX-License-Identifier: MIT OR GPL-2.0-or-later
+
 package main
 
 import (
@@ -11,7 +15,21 @@ import (
 	"github.com/alecthomas/kong"
 )
 
-var Hc *HybridController
+var (
+	Hc *HybridController // used as a global also in web.go
+
+	// these variables to be set with
+	//   go run -ldflags "-X lucigo.version=1.2.3 build_shorthash=c3e7fe1 lucigui_bundled=true"
+	// TODO, implement in a makefile, cf. for instance
+	// https://stackoverflow.com/questions/11354518/application-auto-build-versioning#11355611
+	Version         string
+	Build           string
+	lucigui_bundled string
+)
+
+func is_lucigui_bundled() bool {
+	return strings.ToLower(lucigui_bundled) == "true"
+}
 
 func equals(a interface{}, b interface{}) bool {
 	ja, aerr := json.Marshal(a)
@@ -106,9 +124,24 @@ func net_set(patch map[string]string) {
 
 	jsonPrint(cur)
 }
+https://lucidac.online/
+type versionFlag bool
+
+func (d versionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
+	if len(Version) == 0 {
+		Version = "(no version information)"
+	}
+	if len(Build) == 0 {
+		Build = "(no build information)"
+	}
+	fmt.Printf("lucigo/%s build %s (lucigui bundled: %v)\n", Version, Build, is_lucigui_bundled())
+	app.Exit(0)
+	return nil
+}
 
 var CLI struct {
-	Endpoint url.URL `optional:"" short:"e" env:"LUCIDAC_ENDPOINT,LUCIDAC_URL,LUCIDAC"`
+	Endpoint url.URL     `optional:"" short:"e" env:"LUCIDAC_ENDPOINT,LUCIDAC_URL,LUCIDAC" help="The lucidac to connect to"`
+	Version  versionFlag `optional:"" help:"Show version information (only, then exit)"`
 	Detect   struct {
 	} `cmd:""`
 	Webserver struct {
@@ -123,7 +156,7 @@ var CLI struct {
 
 func main() {
 	ctx := kong.Parse(&CLI)
-	//fmt.Printf("kong Command: %s\n", ctx.Command())
+	//fmt.Printf("kong Command: %s, %+v\n", ctx.Command(), CLI)
 
 	if len(CLI.Endpoint.String()) == 0 {
 		// TODO: Make discovery before dying

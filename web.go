@@ -1,13 +1,23 @@
+// Copyright (c) 2024 anabrid GmbH
+// Contact: https://www.anabrid.com/licensing/
+// SPDX-License-Identifier: MIT OR GPL-2.0-or-later
+
 package main
 
 import (
+	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
 )
+
+//go:embed web-assets/*
+var embeddedLucigoAssets embed.FS
 
 var upgrader = websocket.Upgrader{} // use default options
 
@@ -59,14 +69,55 @@ func ws(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func webServerIdent(w http.ResponseWriter, r *http.Request) {
+	var proxy_target *string
+	if Hc != nil && len(Hc.endpoint) != 0 {
+		proxy_target = &Hc.endpoint
+	}
+
+	ident := map[string]interface{}{
+		"webserver": map[string]string{
+			"scenario": "proxy",
+			"name":     "lucigo",
+			"version":  Version,
+			"build":    Build,
+		},
+		"proxy": map[string]string{
+			"target": *proxy_target,
+		},
+		"lucigui": map[string]interface{}{
+			"host_static_assets": is_lucigui_bundled(),
+			"further_infos_here": nil,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ident)
+}
+
 func StartWebserver() {
 	log.SetFlags(0)
 
-	http.HandleFunc("/", getRoot)
+	log.Printf("Webserver starting at http://0.0.0.0:8000\n")
 
+	matches, err := fs.Glob(embeddedLucigoAssets, "*/*")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Embedded files: %+v\n", matches)
+
+	http.HandleFunc("/", getRoot) // also any 404...
+	http.HandleFunc("/.well-known/lucidac.json", webServerIdent)
 	http.HandleFunc("/ws", ws)
 
-	err := http.ListenAndServe(":8000", nil)
+	// serve build-time embedded snapshot of directory
+	http.Handle("/embedded/", http.StripPrefix("/embedded/", http.FileServer(http.FS(embeddedLucigoAssets))))
+
+	// serve directory live, can be changed at runtime
+	// interestingly, this is without the prefix.
+	http.Handle("/local/", http.StripPrefix("/local/", http.FileServer(http.Dir("web-assets"))))
+
+	err = http.ListenAndServe(":8000", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
