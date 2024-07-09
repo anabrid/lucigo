@@ -32,15 +32,35 @@ Checked if implemented
 - [ ] USB Serial discovery
 - [ ] current serial USB library does not work for Mac (at least not cross compiling, cf the gitlab-CI)
 
+## Getting started as a user
+
+Just download the builds from an appropriate continous integration server, for
+instance (TODO: Provide at Github).
+
 ## Getting started as developer
 
+Once Go is running on your system, it is very easy to build the code. Here are
+three possible methods:
+
+1. Just run `go install github.com/anabrid/lucigo@latest` from somewhere, withou
+   checking out the repository or anything.
+2. Check out the repository, run `go build .` and find the executable in the
+   same directory.
+3. Check out the repository, run `make build`, find the executables in the `build/`
+   directory. This also does cross compilation, so you find executables for all
+   platforms in the `build/` directory. Choose yours.
+
+Current executable sizes/artifact sizes are about 15MB in size.
+
+### Installing Go
 Install go with your package manager, such as `apt install golang`, or follow
 the instructions from https://go.dev/doc/install
 
-A command like `go run . --help` or `go build . && ./lucigo --help` will get
-you compiled and started. Cross compilation is very easy, for instance
-`GOOS="windows" GOARCH="amd64" go build .`. Current executable sizes/artifact
-sizes are about 15MB in size.
+On Mac, need to make sure that Xcode is installed before you can use the go
+compiler, otherwisse you will get an error about `xcrun`. Run
+`xcode-select --install` and also probably follow the steps
+[described here](https://stackoverflow.com/questions/52522565/git-is-not-working-after-macos-update-xcrun-error-invalid-active-developer-p#52522566)
+if the xcrun problems remain.
 
 ## License
 

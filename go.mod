@@ -1,11 +1,13 @@
-module lucigo
+module github.com/anabrid/lucigo
 
 go 1.22.4
 
-require github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07
+require (
+	github.com/gorilla/websocket v1.5.3
+	github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07
+)
 
 require (
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/miekg/dns v1.1.41 // indirect
 	golang.org/x/net v0.0.0-20210410081132-afb366fc7cd1 // indirect
 )
