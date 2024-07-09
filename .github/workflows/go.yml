@@ -43,3 +43,20 @@ jobs:
       with:
         name: Build
         path: build/
+    - name: Latest Release (always)
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: true
+        title: "Development Build"
+        files: |
+          build/*
+    - name: Proper Release (only on tagged)
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        # make_latest: true
+        generate_release_notes: true
+        files: build/*
+        # name: Release ${{ include tag name here }}
