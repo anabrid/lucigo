@@ -35,20 +35,28 @@ Checked if implemented
 ## Getting started as a user
 
 Just download the builds from an appropriate continous integration server, for
-instance (TODO: Provide at Github).
+instance (*TODO: Also provide at Github*).
 
 ## Getting started as developer
 
 Once Go is running on your system, it is very easy to build the code. Here are
 three possible methods:
 
-1. Just run `go install github.com/anabrid/lucigo@latest` from somewhere, withou
-   checking out the repository or anything.
+1. Just run `go install github.com/anabrid/lucigo@latest` from somewhere, without
+   checking out the repository or anything. This will download and compile all
+   dependencies and put them to `$GOPATH`, which defaults to `~/go/bin` on
+   Linux and Mac.
 2. Check out the repository, run `go build .` and find the executable in the
    same directory.
 3. Check out the repository, run `make build`, find the executables in the `build/`
    directory. This also does cross compilation, so you find executables for all
    platforms in the `build/` directory. Choose yours.
+
+Note that using `make` is the currently the only way of building a fully fledged 
+executable which has version information about itself (`lucigo --version`) and
+contains a build image of the LUCIGUI. The other ways of building the executable
+are still fine and working, however, for instance, `lucigo --version` currently
+holds no information in these builds.
 
 Current executable sizes/artifact sizes are about 15MB in size.
 
