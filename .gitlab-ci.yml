@@ -1,8 +1,13 @@
 image: golang:latest
 
 stages:
-#  - test
+  - test
   - build
+
+test:
+  stage: test
+  script:
+    - go test .
 
 compile:
   stage: build

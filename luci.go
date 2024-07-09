@@ -30,16 +30,18 @@ type RecvEnvelope struct {
 }
 
 func NewEnvelope(Type string) SendEnvelope {
-	// Simplifying, nectlecting msg
 	return SendEnvelope{Type: Type, Id: uuid.New()}
 }
 
 //type Endpoint string
 
 type JSONLEndpoint struct {
-	Host     string
-	Port     int
-	HostPort string
+	Host string
+	Port int
+}
+
+func (e *JSONLEndpoint) HostPort() string {
+	return fmt.Sprintf("%s:%d", e.Host, e.Port) // won't work for IPv6
 }
 
 type SerialEndpoint struct {
@@ -68,7 +70,7 @@ func ParseEndpoint(endpoint string) (interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("expected Port as String, but understood %s as %+v", endpoint, u)
 		}
-		return JSONLEndpoint{hostname, port, u.Host}, nil
+		return JSONLEndpoint{hostname, port}, nil
 	}
 
 	if u.Scheme == "serial" {
@@ -103,7 +105,7 @@ func NewHybridController(endpoint string) (*HybridController, error) {
 	switch eps := endpointstruct.(type) {
 	case JSONLEndpoint:
 		//fmt.Printf("Dialing... %#v\n", eps)
-		c, err := net.Dial("tcp", eps.HostPort)
+		c, err := net.Dial("tcp", eps.HostPort())
 		//fmt.Printf("Result is %#v, %#v\n", c, err)
 		if err != nil {
 			log.Fatal(err)
@@ -137,15 +139,15 @@ func NewHybridController(endpoint string) (*HybridController, error) {
 	return hc, nil
 }
 
-func (hc *HybridController) command(sent_envelope SendEnvelope) (*RecvEnvelope, error) {
+func (hc *HybridController) Command(sent_envelope SendEnvelope) (*RecvEnvelope, error) {
 	//fmt.Printf("command(%+v)\n", sent_envelope)
 	sent_line, err := json.Marshal(sent_envelope)
 	if err != nil {
 		return nil, err //log.Fatal(err)
 	}
 
-	if hc.stream == nil {
-		return nil, fmt.Errorf("Cannot write on uninitialized HybridController")
+	if hc == nil || hc.stream == nil {
+		return nil, fmt.Errorf("cannot write on uninitialized HybridController")
 	}
 
 	_, err = hc.stream.Write(append(sent_line, []byte("\r\n")...))
@@ -181,14 +183,14 @@ func (hc *HybridController) command(sent_envelope SendEnvelope) (*RecvEnvelope, 
 	return recv_envelope, nil
 }
 
-func (hc *HybridController) queryMsg(Type string, Msg map[string]interface{}) (*RecvEnvelope, error) {
+func (hc *HybridController) QueryMsg(Type string, Msg map[string]interface{}) (*RecvEnvelope, error) {
 	envelope := NewEnvelope(Type)
 	envelope.Msg = Msg
-	return hc.command(envelope)
+	return hc.Command(envelope)
 }
 
-func (hc *HybridController) query(Type string) (*RecvEnvelope, error) {
-	return hc.command(NewEnvelope(Type))
+func (hc *HybridController) Query(Type string) (*RecvEnvelope, error) {
+	return hc.Command(NewEnvelope(Type))
 }
 
 func findServers() {

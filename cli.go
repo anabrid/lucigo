@@ -52,6 +52,61 @@ func treatBool(val string) any {
 	}
 }
 
+func net_set(patch map[string]string) {
+	// the incoming patch is flat and uses the following notations:
+	//  1) foo.bar = cur[foo][bar]    (one level of nesting)
+	//  2) bar     = cur[*][bar]      (shorthands to be searched for)
+
+	curEnv, err := Hc.Query("net_get")
+	if err != nil {
+		log.Fatal(err)
+	}
+	cur := curEnv.Msg // current net configuration
+
+	// TODO Deep-copy cur
+
+	// search for the data
+	for ink, inv := range CLI.NetSet.Settings {
+		inkhead, inktail, ink_is_hierarchical := strings.Cut(ink, ".")
+
+		if !ink_is_hierarchical {
+			// search for the key in all dictionaries (notation 2)
+			cand_head := []string{}
+			for park, parv := range cur {
+				pard, pard_is_dict := parv.(map[string]interface{})
+				if !pard_is_dict {
+					continue // cannot descend into scalar
+				} else if _, node_exists := pard[ink]; node_exists {
+					// have found a node candidate where the key belongs to!
+					cand_head = append(cand_head, park)
+				}
+			}
+
+			if len(cand_head) == 0 {
+				// no candidate found -> make it tomost
+				cur[ink] = treatBool(inv)
+			} else if len(cand_head) == 1 {
+				// exactly one candidate found -> shorthand worked
+				cur[cand_head[0]].(map[string]interface{})[ink] = treatBool(inv)
+			} else {
+				// multiple candidates found. Make it an error.
+				// Also improve error message.
+				fmt.Printf("Found multiple candidates for key '%s', specify it fully qualified with 'some-prefix.%s' %+v", ink, ink, cand_head)
+			}
+		} else { // if ink_is_hierarchical {
+			if _, curv_exists := cur[inkhead]; !curv_exists {
+				// have to create the parent node
+				cur[inkhead] = make(map[string]interface{})
+			}
+			// if the datum exists already, could also adopt for the data type
+			// and raise an error if it doesn't match at all
+			cur[inkhead].(map[string]interface{})[inktail] = treatBool(inv)
+		}
+	}
+
+	jsonPrint(cur)
+}
+
 var CLI struct {
 	Endpoint url.URL `optional:"" short:"e" env:"LUCIDAC_ENDPOINT,LUCIDAC_URL,LUCIDAC"`
 	Detect   struct {
@@ -77,7 +132,8 @@ func main() {
 	}
 	//fmt.Printf("CLI Endpoint: %#v len %d\n", CLI.Endpoint.String(), len(CLI.Endpoint.String()))
 
-	Hc, err := NewHybridController(CLI.Endpoint.String())
+	var err error // do not use "Hc :=" because it overwrites global scope Hc
+	Hc, err = NewHybridController(CLI.Endpoint.String())
 
 	if err != nil {
 		log.Fatal(err)
@@ -86,7 +142,7 @@ func main() {
 	switch ctx.Command() {
 	case "get <query>":
 		//fmt.Printf("Endpoint: %+v\n", CLI.Endpoint)
-		res, err := Hc.query("net_status")
+		res, err := Hc.Query("net_status")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -99,6 +155,10 @@ func main() {
 	case "net-set <settings>":
 		// naming: incoming key/value (from CLI)
 		//         outgoing key/value (towards Settings JSON structure)
+
+		net_set(CLI.NetSet.Settings)
+
+		return
 		out := make(map[string]interface{})
 		for ink, inv := range CLI.NetSet.Settings {
 			inkhead, inktail, ink_is_hierarchical := strings.Cut(ink, ".")
@@ -117,7 +177,7 @@ func main() {
 		fmt.Printf("%+v\n", out)
 		jsonPrint(out)
 
-		proof, err := Hc.queryMsg("net_set", out)
+		proof, err := Hc.QueryMsg("net_set", out)
 		if err != nil {
 			log.Fatal(err)
 		}
