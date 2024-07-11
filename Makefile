@@ -16,8 +16,8 @@ endif
 LDFLAGS=-ldflags="${XFLAGS}"
 
 build: $(shell find *.go -type f)
-	cd cmd/lucigo && go build ${LDFLAGS} -o build/ .
-    GOOS=windows GOARCH=amd64 cd cmd/lucigo &&  go build ${LDFLAGS} -o build/ . # Windows x86 build
+	cd cmd/lucigo && go build ${LDFLAGS} -o ../../build/ .
+    GOOS=windows GOARCH=amd64 cd cmd/lucigo &&  go build ${LDFLAGS} -o ../../build/ . # Windows x86 build
 #	term library currently doesnt (cross-)compile on mac
     #CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o build/ . # Mac OS X pre-arm64
 
