@@ -1,5 +1,8 @@
 # LUCIGO: A Go client for LUCIDAC
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/anabrid/lucigo.svg)](https://pkg.go.dev/github.com/anabrid/lucigo)
+[![Github CI](https://github.com/anabrid/lucigo/actions/workflows/go.yml/badge.svg)](https://github.com/anabrid/lucigo)
+
 This repository holds a little client for the LUCIDAC with the focus on
 *device administration*. While all other clients available require ecosystems
 such as Python PIP or the Julia package manager, the LUCIGO client can be

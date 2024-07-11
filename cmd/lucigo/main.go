@@ -2,6 +2,24 @@
 // Contact: https://www.anabrid.com/licensing/
 // SPDX-License-Identifier: MIT OR GPL-2.0-or-later
 
+/*
+lucigo is a client for the LUCIDAC and a reference implementation for the
+similiarly named golang package which allows to write clients in the go
+programming language. The executable has a focus on device administration
+and is not a general-purpose client, i.e. it does not expose support for
+simplifying analog circuit configuration. In contrast, the tool provides
+support for networking with the LUCIDAC. For instance, it allows to easily
+bring a USB device into the network ("proxying") and can also run a webserver
+to host the [lucigui](https://lucidac.online/). *lucigui* is the web-based
+LUCIDAC client written in Svelte/TypeScript and not to be confused with
+*lucigo*.
+
+Given the static nature of go builds, it is also an excellent tool for
+getting started with LUCIDAC, given that no
+dependencies have to be installed and users do not have to opt-in to some
+ecosystem. This way, lucigo may also be a useful tool for shell scripting
+a LUCIDAC.
+*/
 package main
 
 import (
