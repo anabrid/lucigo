@@ -13,10 +13,11 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/anabrid/lucigo"
 )
 
 var (
-	Hc *HybridController // used as a global also in web.go
+	Hc *lucigo.HybridController // used as a global also in web.go
 
 	// these variables to be set with
 	//   go run -ldflags "-X lucigo.version=1.2.3 build_shorthash=c3e7fe1 lucigui_bundled=true"
@@ -166,7 +167,7 @@ func main() {
 	//fmt.Printf("CLI Endpoint: %#v len %d\n", CLI.Endpoint.String(), len(CLI.Endpoint.String()))
 
 	var err error // do not use "Hc :=" because it overwrites global scope Hc
-	Hc, err = NewHybridController(CLI.Endpoint.String())
+	Hc, err = lucigo.NewHybridController(CLI.Endpoint.String())
 
 	if err != nil {
 		log.Fatal(err)
@@ -182,9 +183,9 @@ func main() {
 		jsonPrint(res.Msg)
 		//fmt.Printf("%+v\n", res)
 	case "detect":
-		findServers()
+		lucigo.FindServers()
 	case "webserver":
-		StartWebserver()
+		NewLuciGoWebServer(Hc).StartWebserver()
 	case "net-set <settings>":
 		// naming: incoming key/value (from CLI)
 		//         outgoing key/value (towards Settings JSON structure)

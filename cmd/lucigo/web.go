@@ -13,36 +13,41 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/anabrid/lucigo"
 	"github.com/gorilla/websocket"
 )
 
 //go:embed web-assets/*
 var embeddedLucigoAssets embed.FS
 
-var upgrader = websocket.Upgrader{} // use default options
+type LuciGoWebServer struct {
+	// should also store other options
+	hc       *lucigo.HybridController
+	upgrader websocket.Upgrader
+}
 
-func getRoot(w http.ResponseWriter, r *http.Request) {
+func (server *LuciGoWebServer) getRoot(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("got / request\n")
 	io.WriteString(w, "This is my website!\n")
 }
 
-func luci2ws(ws *websocket.Conn, done chan struct{}) {
-	for Hc.reader.Scan() {
-		if err := ws.WriteMessage(websocket.TextMessage, Hc.reader.Bytes()); err != nil {
+func (server *LuciGoWebServer) luci2ws(ws *websocket.Conn, done chan struct{}) {
+	for server.hc.Reader.Scan() {
+		if err := ws.WriteMessage(websocket.TextMessage, server.hc.Reader.Bytes()); err != nil {
 			ws.Close()
 			break
 		}
 	}
 
-	if Hc.reader.Err() != nil {
-		log.Println("scan: ", Hc.reader.Err())
+	if server.hc.Reader.Err() != nil {
+		log.Println("scan: ", server.hc.Reader.Err())
 	}
 
 	close(done)
 }
 
-func ws(w http.ResponseWriter, r *http.Request) {
-	c, err := upgrader.Upgrade(w, r, nil)
+func (server *LuciGoWebServer) startWebSocket(w http.ResponseWriter, r *http.Request) {
+	c, err := server.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)
 		return
@@ -50,7 +55,7 @@ func ws(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 
 	done := make(chan struct{})
-	go luci2ws(c, done)
+	go server.luci2ws(c, done)
 
 	// ws2luci
 	for {
@@ -61,7 +66,7 @@ func ws(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("recv: %s", message)
 
-		_, err = Hc.stream.Write(append(message, []byte("\r\n")...))
+		_, err = server.hc.Stream.Write(append(message, []byte("\r\n")...))
 		if err != nil {
 			log.Println("ws2luci:", err)
 			break
@@ -69,10 +74,10 @@ func ws(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func webServerIdent(w http.ResponseWriter, r *http.Request) {
+func (server *LuciGoWebServer) webServerIdent(w http.ResponseWriter, r *http.Request) {
 	var proxy_target *string
-	if Hc != nil && len(Hc.endpoint) != 0 {
-		proxy_target = &Hc.endpoint
+	if server.hc != nil && len(server.hc.Endpoint) != 0 {
+		proxy_target = &server.hc.Endpoint
 	}
 
 	ident := map[string]interface{}{
@@ -95,7 +100,7 @@ func webServerIdent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ident)
 }
 
-func StartWebserver() {
+func (server *LuciGoWebServer) StartWebserver() {
 	log.SetFlags(0)
 
 	log.Printf("Webserver starting at http://0.0.0.0:8000\n")
@@ -106,9 +111,9 @@ func StartWebserver() {
 	}
 	log.Printf("Embedded files: %+v\n", matches)
 
-	http.HandleFunc("/", getRoot) // also any 404...
-	http.HandleFunc("/.well-known/lucidac.json", webServerIdent)
-	http.HandleFunc("/ws", ws)
+	http.HandleFunc("/", server.getRoot) // also any 404...
+	http.HandleFunc("/.well-known/lucidac.json", server.webServerIdent)
+	http.HandleFunc("/ws", server.startWebSocket)
 
 	// serve build-time embedded snapshot of directory
 	http.Handle("/embedded/", http.StripPrefix("/embedded/", http.FileServer(http.FS(embeddedLucigoAssets))))
@@ -121,4 +126,8 @@ func StartWebserver() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func NewLuciGoWebServer(hc *lucigo.HybridController) (server *LuciGoWebServer) {
+	return &LuciGoWebServer{hc: hc, upgrader: websocket.Upgrader{ /*defaults*/ }}
 }

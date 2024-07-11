@@ -2,7 +2,7 @@
 // Contact: https://www.anabrid.com/licensing/
 // SPDX-License-Identifier: MIT OR GPL-2.0-or-later
 
-package main
+package lucigo
 
 import (
 	"bufio"
@@ -92,10 +92,10 @@ func ParseEndpoint(endpoint string) (interface{}, error) {
 }
 
 type HybridController struct {
-	endpoint      string
-	endpoint_type interface{}
-	stream        io.ReadWriter // *serial.Port
-	reader        *bufio.Scanner
+	Endpoint      string
+	Endpoint_type interface{}
+	Stream        io.ReadWriter // *serial.Port
+	Reader        *bufio.Scanner
 }
 
 func NewHybridController(endpoint string) (*HybridController, error) {
@@ -104,8 +104,8 @@ func NewHybridController(endpoint string) (*HybridController, error) {
 		return nil, fmt.Errorf("NewHybridController cannot work with endpoint, %v", err)
 	}
 	hc := &HybridController{}
-	hc.endpoint = endpoint
-	hc.endpoint_type = endpointstruct
+	hc.Endpoint = endpoint
+	hc.Endpoint_type = endpointstruct
 	switch eps := endpointstruct.(type) {
 	case JSONLEndpoint:
 		//fmt.Printf("Dialing... %#v\n", eps)
@@ -114,20 +114,20 @@ func NewHybridController(endpoint string) (*HybridController, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		hc.stream = c
+		hc.Stream = c
 		//fmt.Printf("Connection is open %#v\n", c)
 	case SerialEndpoint:
 		c := &serial.Config{Name: eps.Device, Baud: 115200}
 		sock, err := serial.OpenPort(c)
 		sock.Flush()
-		hc.stream = sock
+		hc.Stream = sock
 		if err != nil {
 			log.Fatal(err)
 		}
 	default:
 		return nil, fmt.Errorf("NewHybridController doesn't know what to do with %T, %#v", eps, eps)
 	}
-	hc.reader = bufio.NewScanner(hc.stream)
+	hc.Reader = bufio.NewScanner(hc.Stream)
 
 	// Slurp any stuff still there, Serial can be weird
 	/*
@@ -150,18 +150,18 @@ func (hc *HybridController) Command(sent_envelope SendEnvelope) (*RecvEnvelope, 
 		return nil, err //log.Fatal(err)
 	}
 
-	if hc == nil || hc.stream == nil {
+	if hc == nil || hc.Stream == nil {
 		return nil, fmt.Errorf("cannot write on uninitialized HybridController")
 	}
 
-	_, err = hc.stream.Write(append(sent_line, []byte("\r\n")...))
+	_, err = hc.Stream.Write(append(sent_line, []byte("\r\n")...))
 	if err != nil {
 		return nil, err
 	}
 
 	var recv_envelope = &RecvEnvelope{}
-	for hc.reader.Scan() {
-		recv_line := hc.reader.Text()
+	for hc.Reader.Scan() {
+		recv_line := hc.Reader.Text()
 		//fmt.Printf("recv_line=%s\n", recv_line)
 
 		// First test_send_env if it is just an echo
@@ -197,7 +197,7 @@ func (hc *HybridController) Query(Type string) (*RecvEnvelope, error) {
 	return hc.Command(NewEnvelope(Type))
 }
 
-func findServers() {
+func FindServers() {
 	entriesCh := make(chan *mdns.ServiceEntry, 4)
 	go func() {
 		for entry := range entriesCh {
