@@ -1,14 +1,8 @@
-As all anabrid code within the LUCIDAC project, this code is dual licensed:
+`SPDX-License-Identifier: MIT OR GPL-2.0-or-later`
 
-> Copyright (c) 2024 anabrid GmbH
-> 
-> Contact: https://www.anabrid.com/licensing/
->
-> SPDX-License-Identifier: MIT OR GPL-2.0-or-later
-
-In order to make license detectors happy and to understand that this is open source,
-what follows is the license text for the more permissive of both licenses, the MIT
-license.
+As all anabrid code within the LUCIDAC project, this code is dual licensed under
+MIT and GPL. Choose what you prefer. See https://www.anabrid.com/licensing/ for
+details.
 
 ## MIT License Deed
 
