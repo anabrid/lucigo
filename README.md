@@ -49,6 +49,30 @@ Checked if implemented
 - [ ] USB Serial discovery
 - [ ] current serial USB library does not work for Mac (at least not cross compiling, cf the gitlab-CI)
 
+## Alternatives
+
+Mangling and forwarding streams is something various tools can perform, for instance:
+
+* [Websockify](https://github.com/novnc/websockify) as a Websocket-TCP proxy/bridge
+* [socat](http://www.dest-unreach.org/socat/doc/socat.html) or
+  [goproxy](https://github.com/snail007/goproxy) for general purpose network proxying
+  for TCP/UDP/websocket services (see in particular
+  an [example how to use socat to redirect a device socket](https://bloggerbust.ca/post/let-socket-cat-be-thy-glue-over-serial/)
+* [pyserial's `tcp_serial_redirect.py`](https://raw.githubusercontent.com/pyserial/pyserial/master/examples/tcp_serial_redirect.py)
+  as a standalone code for tcp-serial redirection (also featured
+  [within the pyanalog docs](https://www.anabrid.dev/docs/pyanalog/dirhtml/hycon/networking/)).
+* [jq](https://github.com/jqlang/jq) as a command line JSON query processor and beautifier
+* For zeroconf lookup, there are various clients such as `avahi-discover` (Linux),
+  `dns-sd -B _lucijsonl._tcp` (Mac) or the cross-platform
+  [async_browser.py](https://github.com/python-zeroconf/python-zeroconf/blob/master/examples/async_browser.py).
+
+
+Obviously, these tools do not speak the LUCIDAC protocol (well, some speak JSON, thought).
+Lucigo is merely a single interface for some features provided by much powerful tools
+above. Lucigo comes without dependencies and installation hazzle, which makes usage very
+simple.
+
+
 ## Getting started as developer
 
 Once Go is running on your system, it is very easy to build the code. Here are
