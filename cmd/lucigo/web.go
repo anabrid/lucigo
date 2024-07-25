@@ -22,8 +22,9 @@ var embeddedLucigoAssets embed.FS
 
 type LuciGoWebServer struct {
 	// should also store other options
-	hc       *lucigo.HybridController
-	upgrader websocket.Upgrader
+	listenAddress string
+	hc            *lucigo.HybridController
+	upgrader      websocket.Upgrader
 }
 
 func (server *LuciGoWebServer) getRoot(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +101,9 @@ func (server *LuciGoWebServer) webServerIdent(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(ident)
 }
 
-func (server *LuciGoWebServer) StartWebserver() {
+// Note that this function starts the server in sync. Use a goroutine
+// around it if you want to start it in background
+func (server *LuciGoWebServer) StartWebserver() error {
 	log.SetFlags(0)
 
 	log.Printf("Webserver starting at http://0.0.0.0:8000\n")
@@ -122,12 +125,10 @@ func (server *LuciGoWebServer) StartWebserver() {
 	// interestingly, this is without the prefix.
 	http.Handle("/local/", http.StripPrefix("/local/", http.FileServer(http.Dir("web-assets"))))
 
-	err = http.ListenAndServe(":8000", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	err = http.ListenAndServe(server.listenAddress, nil)
+	return err
 }
 
 func NewLuciGoWebServer(hc *lucigo.HybridController) (server *LuciGoWebServer) {
-	return &LuciGoWebServer{hc: hc, upgrader: websocket.Upgrader{ /*defaults*/ }}
+	return &LuciGoWebServer{hc: hc, listenAddress: "127.0.0.1:8000", upgrader: websocket.Upgrader{ /*defaults*/ }}
 }

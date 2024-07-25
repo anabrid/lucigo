@@ -91,3 +91,12 @@ As all anabrid code within the LUCIDAC project, this code is dual licensed:
 > Contact: https://www.anabrid.com/licensing/
 >
 > SPDX-License-Identifier: MIT OR GPL-2.0-or-later
+
+## Go infrastructure
+
+Manually trigger an update at https://pkg.go.dev/github.com/anabrid/lucigo with:
+
+```
+VER=$(git describe --tags)
+curl https://sum.golang.org/lookup/github.com/anabrid/lucigo@$VER
+```

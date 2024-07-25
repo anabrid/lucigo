@@ -15,8 +15,8 @@ type TestCandidates struct {
 }
 
 var valid_candidates = []TestCandidates{
-	{"tcp://1.2.3.4", JSONLEndpoint{"1.2.3.4", 5732}},
-	{"tcp://1.2.3.4:123", JSONLEndpoint{"1.2.3.4", 123}},
+	{"tcp://1.2.3.4", TCPEndpoint{"1.2.3.4", 5732}},
+	{"tcp://1.2.3.4:123", TCPEndpoint{"1.2.3.4", 123}},
 	{"serial://dev/null", SerialEndpoint{"/dev/null"}},
 	{"serial://COM1", SerialEndpoint{"COM1"}},
 }
@@ -53,7 +53,7 @@ func TestParseEndpoint_single(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseEndpoint Error: %v", err)
 	}
-	if !reflect.DeepEqual(endpoint, JSONLEndpoint{"1.2.3.4", 5732}) {
+	if !reflect.DeepEqual(endpoint, TCPEndpoint{"1.2.3.4", 5732}) {
 		t.Fatalf(`ParseEndpoint("tcp://1.2.3.4") != JSONLEndpoint{"1.2.3.4", 5732}`)
 	}
 }

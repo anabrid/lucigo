@@ -8,7 +8,9 @@ require (
 )
 
 require (
+	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/miekg/dns v1.1.41 // indirect
+	github.com/nqd/flat v0.2.0 // indirect
 	golang.org/x/net v0.0.0-20210410081132-afb366fc7cd1 // indirect
 )
 

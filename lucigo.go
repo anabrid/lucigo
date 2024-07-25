@@ -39,6 +39,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/mdns"
@@ -64,9 +65,9 @@ type RecvEnvelope struct {
 	Msg   map[string]interface{} `json:"msg"`
 }
 
-// isSuccess indicates whether the RecvEnvelope contains an Error message
+// IsSuccess indicates whether the RecvEnvelope contains an Error message
 // or not.
-func RecvIsSuccess(recv *RecvEnvelope) bool {
+func (recv *RecvEnvelope) IsSuccess() bool {
 	return recv.Code == 0
 }
 
@@ -75,14 +76,14 @@ func NewEnvelope(Type string) SendEnvelope {
 	return SendEnvelope{Type: Type, Id: uuid.New()}
 }
 
-// JSONLEndpoint contains all information neccessary to connect to a TCP/IP
+// TCPEndpoint contains all information neccessary to connect to a TCP/IP
 // endpoint. An endpoint is where an actual LUCIDAC serves.
-type JSONLEndpoint struct {
+type TCPEndpoint struct {
 	Host string
 	Port int
 }
 
-func (e *JSONLEndpoint) HostPort() string {
+func (e *TCPEndpoint) HostPort() string {
 	return fmt.Sprintf("%s:%d", e.Host, e.Port) // won't work for IPv6
 }
 
@@ -116,7 +117,7 @@ func ParseEndpoint(endpoint string) (interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("expected Port as String, but understood %s as %+v", endpoint, u)
 		}
-		return JSONLEndpoint{hostname, port}, nil
+		return TCPEndpoint{hostname, port}, nil
 	}
 
 	if u.Scheme == "serial" {
@@ -153,9 +154,9 @@ func NewHybridController(endpoint string) (*HybridController, error) {
 	hc := &HybridController{}
 	hc.Endpoint = endpoint
 	hc.Endpoint_type = endpointstruct
+	log.Printf("NewHybridController: Connecting to %s ...\n", endpoint)
 	switch eps := endpointstruct.(type) {
-	case JSONLEndpoint:
-		//fmt.Printf("Dialing... %#v\n", eps)
+	case TCPEndpoint:
 		c, err := net.Dial("tcp", eps.HostPort())
 		//fmt.Printf("Result is %#v, %#v\n", c, err)
 		if err != nil {
@@ -254,19 +255,41 @@ func (hc *HybridController) Query(Type string) (*RecvEnvelope, error) {
 // FindServers currently implements mDNS Zeroconf discovery in the local
 // IP broadcast domain.
 // TODO: It is supposed to be extended for USB device discovery.
-func FindServers() {
+func FindServers() string {
 	entriesCh := make(chan *mdns.ServiceEntry, 4)
+	res := make(chan string)
 	go func() {
 		for entry := range entriesCh {
-			// TODO, check with https://pkg.go.dev/net#LookupHost
-			// whether we can resolve that entry, similar to the python
-			// version.
-			// also make sure we collect the data back at the main function,
-			// i.e. return what is in entriesCh
-			fmt.Printf("Got new entry: %v\n", entry)
+			log.Printf("FindServers: %v\n", entry)
+
+			resolvableIPv4 := false
+			ips, err := net.LookupIP(entry.Host)
+			if err != nil {
+				//fmt.Printf("Could not resolve Host, take instead %s\n", entry.AddrV4)
+			} else {
+				for _, ip := range ips {
+					if ip.String() == entry.AddrV4.String() {
+						resolvableIPv4 = true
+					}
+				}
+			}
+			if resolvableIPv4 {
+				res <- "tcp://" + entry.Host
+			} else {
+				res <- "tcp://" + entry.AddrV4.String()
+			}
 		}
 	}()
 
 	mdns.Lookup("_lucijsonl._tcp", entriesCh)
+	result := ""
+	select {
+	case result = <-res:
+		log.Printf("FindServers: Decided for %s\n", result)
+		return result
+	case <-time.After(1 * time.Second):
+		log.Printf("FindServers: Timed out\n")
+	}
 	close(entriesCh)
+	return result
 }

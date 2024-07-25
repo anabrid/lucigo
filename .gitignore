@@ -1,6 +1,7 @@
 build
 
 # Binaries for programs and plugins
+lucigo
 *.exe
 *.exe~
 *.dll

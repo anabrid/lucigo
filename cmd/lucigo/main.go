@@ -25,13 +25,21 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"runtime"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/anabrid/lucigo"
+	"github.com/nqd/flat"
 )
 
 var (
@@ -89,16 +97,41 @@ func treatBool(val string) any {
 	}
 }
 
+func net_get() {
+	// TODO: Does not handle the following values well:
+	//       Null, empty lists/maps, empty strings
+	res, err := getHybridController().Query("net_get")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !res.IsSuccess() {
+		log.Fatalf("net_get returned code %d: %s", res.Code, res.Error)
+	}
+	flattened_settings, err := flat.Flatten(res.Msg, nil)
+	if err != nil {
+		log.Fatalf("Flattening of net_get failed: %s\n", err)
+	}
+	keys := keys(flattened_settings)
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Print(k)
+		fmt.Print(" = ")
+		fmt.Println(flattened_settings[k])
+	}
+}
+
 func net_set(patch map[string]string) {
 	// the incoming patch is flat and uses the following notations:
 	//  1) foo.bar = cur[foo][bar]    (one level of nesting)
 	//  2) bar     = cur[*][bar]      (shorthands to be searched for)
 
-	curEnv, err := Hc.Query("net_get")
+	curEnv, err := getHybridController().Query("net_get")
 	if err != nil {
 		log.Fatal(err)
 	}
 	cur := curEnv.Msg // current net configuration
+
+	// TODO: use flat.Unflatten / flat.Flatten as in net-set!
 
 	// TODO Deep-copy cur
 
@@ -145,6 +178,7 @@ func net_set(patch map[string]string) {
 }
 
 type versionFlag bool
+type verboseFlag bool
 
 func (d versionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
 	if len(Version) == 0 {
@@ -158,105 +192,192 @@ func (d versionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
 	return nil
 }
 
+func keys(m map[string]interface{}) (keys []string) {
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func tryFindServers() (endpoint string) {
+	endpoint = lucigo.FindServers()
+	if len(endpoint) == 0 {
+		fmt.Fprintf(os.Stderr, "No Endpoint found (tried Zeroconf). Provide a LUCIDAC Endpoint, either with -e or as environment variable LUCIDAC_ENDPOINT\n")
+		os.Exit(1)
+	}
+	return endpoint
+}
+
+func cliOrTryFindServers() (endpoint string) {
+	endpoint = CLI.Endpoint.String()
+	if len(endpoint) == 0 {
+		return tryFindServers()
+	}
+	return endpoint
+}
+
+func getHybridController() *lucigo.HybridController {
+	endpoint := cliOrTryFindServers()
+	Hc, err := lucigo.NewHybridController(endpoint)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(2)
+	}
+	return Hc
+}
+
+func isReachable(address string) bool {
+	timeout := 500 * time.Millisecond
+	log.Printf("isReachable: Testing %s for a time %v\n", address, timeout)
+	_, err := net.DialTimeout("tcp", address, timeout)
+	return err == nil
+}
+
+func isURLReachable(url string) bool {
+	client := http.Client{
+		Timeout: 800 * time.Millisecond,
+	}
+	recv, err := client.Get(url)
+	return err == nil && recv.StatusCode < 400
+}
+
+func openWebBrowser(url string) {
+	var err error
+
+	switch runtime.GOOS {
+	case "linux":
+		log.Printf("openWebBrowser: Calling xdg-open %s\n", url)
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		log.Printf("openWebBrowser: Calling rundll32 url.dll,FileProtocolHandler %s\n", url)
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		log.Printf("openWebBrowser: Calling open %s\n", url)
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("please point your browser to this URL: %s", url)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func Start() {
+	endpoint := cliOrTryFindServers()
+	Hc, err := lucigo.NewHybridController(endpoint)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	canUseEmbeddedWebserver := false
+	targetUrl := ""
+
+	switch endpoint := Hc.Endpoint_type.(type) {
+	case lucigo.TCPEndpoint:
+		// checks both for available server and if LUCIGUI is embedded in firmware
+		candidateUrl := "http://" + endpoint.Host + "/lucigui/"
+		log.Printf("Start: Testing whether %s is reachable\n", candidateUrl)
+		canUseEmbeddedWebserver = isURLReachable(candidateUrl)
+		if canUseEmbeddedWebserver {
+			targetUrl = candidateUrl
+		}
+	case lucigo.SerialEndpoint:
+		canUseEmbeddedWebserver = false
+	}
+
+	server_err := make(chan error)
+	if canUseEmbeddedWebserver {
+		log.Printf("Start: Can reach embedded Webserver at %s\n", targetUrl)
+	} else {
+		server := NewLuciGoWebServer(Hc)
+		targetUrl = "http://" + server.listenAddress
+		log.Printf("Start: Cannot reach embedded Webserver. Launching webserver at %s\n", targetUrl)
+		go func() {
+			server_err <- server.StartWebserver()
+			log.Println("Server already finished")
+		}()
+		select {
+		case err_val, received := <-server_err:
+			if received {
+				log.Fatalln("Webserver prematurly ended.")
+				if err_val != nil {
+					log.Fatal(server_err)
+				}
+			}
+		default: // no error received, still running
+		}
+	}
+
+	openWebBrowser(targetUrl)
+
+	if !canUseEmbeddedWebserver {
+		// wait until webserver completed
+		err_val := <-server_err
+		if err_val != nil {
+			log.Fatal(err_val)
+		}
+	}
+}
+
 var CLI struct {
 	Endpoint url.URL     `optional:"" short:"e" env:"LUCIDAC_ENDPOINT,LUCIDAC_URL,LUCIDAC" help="The lucidac to connect to"`
 	Version  versionFlag `optional:"" help:"Show version information (only, then exit)"`
+	Verbose  verboseFlag `optional:"" short:"v" help:"Get more verbose output"`
 	Detect   struct {
-	} `cmd:""`
+	} `cmd:"" help:"Detect any LUCIDAC, print and exit"`
+	Start struct {
+	} `cmd:"" help:"Getting started quickly - Open any appropriate GUI in webbrowser. Runs per default if no argument is given"`
 	Webserver struct {
-	} `cmd:""`
-	Get struct {
-		Query string `arg:"" enum:"net,entities,circuit" default:"net"`
-	} `cmd:"get" help:"Read out/export information"`
+	} `cmd:"" help:"Launch internal webserver with GUI. Won't fall back to embedded webserver."`
+	Query struct {
+		Type string `arg:"" optional:"" default:"help"`
+	} `cmd:"query" help:"Ask a raw query without arguments"`
+	NetGet struct {
+	} `cmd:"net-get" help:"Read out permanent settings"`
 	NetSet struct {
 		Settings map[string]string `arg:""`
 	} `cmd:"net-set" aliases:"set" help:"Set permanent settings"`
 }
 
 func main() {
-	ctx := kong.Parse(&CLI)
+	if len(os.Args) == 1 {
+		// Kong does not accept default commands. For no arguments given,
+		// short-circuit Kong and instead call Start().
+		// note that there is no way to decrease verbosity here.
+		Start()
+		return
+	}
+
+	desc := kong.Description("LUCIGO is an administrative client for the LUCIDAC analog digital hybrid computer. It provides a command line interface for simplifying the device lookup and administration. It furthermore provides built in proxy services and can start up the web-based GUI on an USB-connected LUCIDAC. Consider the README for more information at https://github.com/anabrid/lucigo")
+	ctx := kong.Parse(&CLI, desc, kong.UsageOnError())
 	//fmt.Printf("kong Command: %s, %+v\n", ctx.Command(), CLI)
 
-	if len(CLI.Endpoint.String()) == 0 {
-		// TODO: Make discovery before dying
-		fmt.Printf("Need to provide a LUCIDAC Endpoint, either with -e or as environment variable LUCIDAC_ENDPOINT\n")
-		os.Exit(-1)
-	}
-	//fmt.Printf("CLI Endpoint: %#v len %d\n", CLI.Endpoint.String(), len(CLI.Endpoint.String()))
-
-	var err error // do not use "Hc :=" because it overwrites global scope Hc
-	Hc, err = lucigo.NewHybridController(CLI.Endpoint.String())
-
-	if err != nil {
-		log.Fatal(err)
+	if !CLI.Verbose {
+		log.SetOutput(io.Discard)
 	}
 
 	switch ctx.Command() {
-	case "get <query>":
-		//fmt.Printf("Endpoint: %+v\n", CLI.Endpoint)
-		res, err := Hc.Query("net_status")
+	case "query <type>":
+		res, err := getHybridController().Query(CLI.Query.Type)
 		if err != nil {
 			log.Fatal(err)
 		}
 		jsonPrint(res.Msg)
 		//fmt.Printf("%+v\n", res)
 	case "detect":
-		lucigo.FindServers()
+		endpoint := tryFindServers()
+		fmt.Println(endpoint)
 	case "webserver":
+		Hc := getHybridController()
 		NewLuciGoWebServer(Hc).StartWebserver()
+	case "net-get":
+		net_get()
 	case "net-set <settings>":
 		// naming: incoming key/value (from CLI)
 		//         outgoing key/value (towards Settings JSON structure)
-
 		net_set(CLI.NetSet.Settings)
-
 		return
-		out := make(map[string]interface{})
-		for ink, inv := range CLI.NetSet.Settings {
-			inkhead, inktail, ink_is_hierarchical := strings.Cut(ink, ".")
-			if ink_is_hierarchical {
-				if _, outv_exists := out[inkhead]; !outv_exists {
-					out[inkhead] = make(map[string]interface{})
-				}
-				out[inkhead].(map[string]interface{})[inktail] = treatBool(inv)
-			} else {
-				out[ink] = treatBool(inv)
-			}
-		}
-
-		out["no_write"] = true // to test
-
-		fmt.Printf("%+v\n", out)
-		jsonPrint(out)
-
-		proof, err := Hc.QueryMsg("net_set", out)
-		if err != nil {
-			log.Fatal(err)
-		}
-		jsonPrint(proof.Msg)
-
-		// proof to be tested against what is supposed to be like
-		// works only easily when first querying with net_get and then
-		// just making a deep equal test.
-
 	default:
 		fmt.Printf("Unexpected Command: %s\n", ctx.Command())
-
 	}
-
-	/*
-	   hc.query("net_get")
-
-	   data := map[string]interface{}{}
-	   data["hello"] = []int{1, 2, 3, 4}
-
-	   jsonData, err := json.Marshal(data)
-
-	   	if err != nil {
-	   		fmt.Printf("could not marshal json: %s\n", err)
-	   		return
-	   	}
-
-	   fmt.Printf("json data: %s\n", jsonData)
-	*/
 }
