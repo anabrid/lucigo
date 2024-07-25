@@ -31,8 +31,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -241,27 +239,6 @@ func isURLReachable(url string) bool {
 	return err == nil && recv.StatusCode < 400
 }
 
-func openWebBrowser(url string) {
-	var err error
-
-	switch runtime.GOOS {
-	case "linux":
-		log.Printf("openWebBrowser: Calling xdg-open %s\n", url)
-		err = exec.Command("xdg-open", url).Start()
-	case "windows":
-		log.Printf("openWebBrowser: Calling rundll32 url.dll,FileProtocolHandler %s\n", url)
-		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	case "darwin":
-		log.Printf("openWebBrowser: Calling open %s\n", url)
-		err = exec.Command("open", url).Start()
-	default:
-		err = fmt.Errorf("please point your browser to this URL: %s", url)
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 func Start() {
 	endpoint := cliOrTryFindServers()
 	Hc, err := lucigo.NewHybridController(endpoint)
@@ -285,38 +262,21 @@ func Start() {
 		canUseEmbeddedWebserver = false
 	}
 
-	server_err := make(chan error)
 	if canUseEmbeddedWebserver {
 		log.Printf("Start: Can reach embedded Webserver at %s\n", targetUrl)
 	} else {
 		server := NewLuciGoWebServer(Hc)
-		targetUrl = "http://" + server.listenAddress
+		targetUrl = "http://" + server.ListenAddress
 		log.Printf("Start: Cannot reach embedded Webserver. Launching webserver at %s\n", targetUrl)
-		go func() {
-			server_err <- server.StartWebserver()
-			log.Println("Server already finished")
-		}()
-		select {
-		case err_val, received := <-server_err:
-			if received {
-				log.Fatalln("Webserver prematurly ended.")
-				if err_val != nil {
-					log.Fatal(server_err)
-				}
-			}
-		default: // no error received, still running
-		}
+		server_err := server.DaemonRun()
+		defer DaemonWait(server_err)
 	}
 
 	openWebBrowser(targetUrl)
 
-	if !canUseEmbeddedWebserver {
-		// wait until webserver completed
-		err_val := <-server_err
-		if err_val != nil {
-			log.Fatal(err_val)
-		}
-	}
+	//if !canUseEmbeddedWebserver {
+	//DaemonWait(server_err)
+	//}
 }
 
 var CLI struct {
@@ -328,6 +288,11 @@ var CLI struct {
 	Start struct {
 	} `cmd:"" help:"Getting started quickly - Open any appropriate GUI in webbrowser. Runs per default if no argument is given"`
 	Webserver struct {
+		AllowOrigin string `default:"" help:"Websocket allowed request Origins"`
+		Port        int    `short:"p" default:"8080" help:"TCP port to listen to."`
+		BindAddress string `short:"b" default:"127.0.0.1" help:"Address to bind to. Use 0.0.0.0 to listen on all interfaces."`
+		StaticPath  string `short:"s" help:"Path to live-serve as static files. If a ZIP file is provided, it's contents are served. Use '.' for current directory." type:"path"`
+		OpenBrowser bool   `negatable:"" default:"true" help:"Open web browser with URL served by server"`
 	} `cmd:"" help:"Launch internal webserver with GUI. Won't fall back to embedded webserver."`
 	Query struct {
 		Type string `arg:"" optional:"" default:"help"`
@@ -369,7 +334,13 @@ func main() {
 		fmt.Println(endpoint)
 	case "webserver":
 		Hc := getHybridController()
-		NewLuciGoWebServer(Hc).StartWebserver()
+		server := NewLuciGoWebServer(Hc)
+		server.ListenAddress = fmt.Sprintf("%s:%d", CLI.Webserver.BindAddress, CLI.Webserver.Port)
+		server.StaticPath = CLI.Webserver.StaticPath
+		server.AllowOrigin = CLI.Webserver.AllowOrigin
+		server_err := server.DaemonRun()
+		openWebBrowser("http://" + server.ListenAddress)
+		DaemonWait(server_err)
 	case "net-get":
 		net_get()
 	case "net-set <settings>":
