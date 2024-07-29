@@ -197,21 +197,24 @@ func keys(m map[string]interface{}) (keys []string) {
 	return keys
 }
 
-func tryFindServers() (endpoint string) {
-	endpoint = lucigo.FindServers()
-	if len(endpoint) == 0 {
-		fmt.Fprintf(os.Stderr, "No Endpoint found (tried Zeroconf). Provide a LUCIDAC Endpoint, either with -e or as environment variable LUCIDAC_ENDPOINT\n")
-		os.Exit(1)
+func cliOrTryFindServers() lucigo.Endpoint {
+	endpoint_str := CLI.Endpoint.String()
+	if len(endpoint_str) != 0 {
+		endpoint, err := lucigo.ParseEndpoint(endpoint_str)
+		if err != nil {
+			log.Fatal(err)
+			os.Exit(3)
+		}
+		return endpoint
+	} else {
+		d := lucigo.NewDiscovery()
+		endpoint, ok := d.FindMaxOne()
+		if !ok {
+			fmt.Fprintf(os.Stderr, "No Endpoint found (tried Zeroconf). Provide a LUCIDAC Endpoint, either with -e or as environment variable LUCIDAC_ENDPOINT\n")
+			os.Exit(4)
+		}
+		return endpoint
 	}
-	return endpoint
-}
-
-func cliOrTryFindServers() (endpoint string) {
-	endpoint = CLI.Endpoint.String()
-	if len(endpoint) == 0 {
-		return tryFindServers()
-	}
-	return endpoint
 }
 
 func getHybridController() *lucigo.HybridController {
@@ -249,7 +252,7 @@ func Start() {
 	canUseEmbeddedWebserver := false
 	targetUrl := ""
 
-	switch endpoint := Hc.Endpoint_type.(type) {
+	switch endpoint := Hc.Endpoint.(type) {
 	case lucigo.TCPEndpoint:
 		// checks both for available server and if LUCIGUI is embedded in firmware
 		candidateUrl := "http://" + endpoint.Host + "/lucigui/"
@@ -260,6 +263,9 @@ func Start() {
 		}
 	case lucigo.SerialEndpoint:
 		canUseEmbeddedWebserver = false
+	default:
+		log.Fatal("Unknown type of endpoint\n")
+		os.Exit(5)
 	}
 
 	if canUseEmbeddedWebserver {
@@ -330,8 +336,9 @@ func main() {
 		jsonPrint(res.Msg)
 		//fmt.Printf("%+v\n", res)
 	case "detect":
-		endpoint := tryFindServers()
-		fmt.Println(endpoint)
+		d := lucigo.NewDiscovery()
+		res := d.FindAll()
+		fmt.Printf("Results: %v\n", res)
 	case "webserver":
 		Hc := getHybridController()
 		server := NewLuciGoWebServer(Hc)

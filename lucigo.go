@@ -76,6 +76,16 @@ func NewEnvelope(Type string) SendEnvelope {
 	return SendEnvelope{Type: Type, Id: uuid.New()}
 }
 
+// LUCIDAC connection endpoints
+type Endpoint interface {
+	Open() (io.ReadWriter, error)
+	ToURL() string
+
+	// Valid checks only for whether the endpoint struct holds useful data,
+	// not whether it can actually be opened
+	IsValid() bool
+}
+
 // TCPEndpoint contains all information neccessary to connect to a TCP/IP
 // endpoint. An endpoint is where an actual LUCIDAC serves.
 type TCPEndpoint struct {
@@ -83,8 +93,32 @@ type TCPEndpoint struct {
 	Port int
 }
 
+func (e TCPEndpoint) IsValid() bool {
+	return e.Port != 0 && e.Host != ""
+}
+
+// Default TCP port for the JSONL protocol
+const defaultTcpPort = 5732
+
 func (e *TCPEndpoint) HostPort() string {
 	return fmt.Sprintf("%s:%d", e.Host, e.Port) // won't work for IPv6
+}
+
+func (e TCPEndpoint) ToURL() string {
+	return "tcp:// " + e.HostPort()
+}
+
+func (e TCPEndpoint) Open() (io.ReadWriter, error) {
+	if !e.IsValid() {
+		return nil, fmt.Errorf("Invalid TCP Endpoint (all zero)")
+	}
+	c, err := net.Dial("tcp", e.HostPort())
+	//fmt.Printf("Result is %#v, %#v\n", c, err)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+	//fmt.Printf("Connection is open %#v\n", c)
 }
 
 // SerialEndport contains all information neccessary to connect to a local
@@ -93,9 +127,27 @@ type SerialEndpoint struct {
 	Device string
 }
 
+func (e SerialEndpoint) IsValid() bool {
+	return e.Device != ""
+}
+
+func (e SerialEndpoint) ToURL() string {
+	return "serial://" + e.Device
+}
+
+func (e SerialEndpoint) Open() (io.ReadWriter, error) {
+	c := &serial.Config{Name: e.Device, Baud: 115200}
+	sock, err := serial.OpenPort(c)
+	if err != nil {
+		return nil, err
+	}
+	sock.Flush()
+	return sock, nil
+}
+
 // ParseEndpoint creates either a JSONLEndpoint or a SerialEndpoint, i.e.
 // translates an endpoint URL string to a structure.
-func ParseEndpoint(endpoint string) (interface{}, error) {
+func ParseEndpoint(endpoint string) (Endpoint, error) {
 	// note that this URL Parsing is far from ideal. But we have unit tests
 	// over there in luci_test.go
 	u, err := url.Parse(endpoint)
@@ -110,12 +162,14 @@ func ParseEndpoint(endpoint string) (interface{}, error) {
 	if u.Scheme == "tcp" {
 		strport := u.Port()
 		hostname := u.Hostname()
+		var port = 0
 		if len(strport) == 0 {
-			strport = "5732" // default port
-		}
-		port, err := strconv.Atoi(strport)
-		if err != nil {
-			return nil, fmt.Errorf("expected Port as String, but understood %s as %+v", endpoint, u)
+			port = defaultTcpPort
+		} else {
+			port, err = strconv.Atoi(strport)
+			if err != nil {
+				return nil, fmt.Errorf("expected Port as String, but understood %s as %+v", endpoint, u)
+			}
 		}
 		return TCPEndpoint{hostname, port}, nil
 	}
@@ -138,42 +192,29 @@ func ParseEndpoint(endpoint string) (interface{}, error) {
 // provides an OOP interface to the LUCIDAC. This class is sometimes also
 // called "LUCIDAC" in other clients.
 type HybridController struct {
-	Endpoint      string
-	Endpoint_type interface{}
-	Stream        io.ReadWriter // *serial.Port
-	Reader        *bufio.Scanner
+	Endpoint Endpoint
+	Stream   io.ReadWriter // *serial.Port
+	Reader   *bufio.Scanner
 }
 
 // NewHybridController expects an endpoint URL as string.
 // It uses [ParseEndpoint] for translating this to an endpoint structure.
-func NewHybridController(endpoint string) (*HybridController, error) {
-	endpointstruct, err := ParseEndpoint(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("NewHybridController cannot work with endpoint, %v", err)
-	}
+func NewHybridController(endpoint Endpoint) (*HybridController, error) {
 	hc := &HybridController{}
 	hc.Endpoint = endpoint
-	hc.Endpoint_type = endpointstruct
 	log.Printf("NewHybridController: Connecting to %s ...\n", endpoint)
-	switch eps := endpointstruct.(type) {
+	var err error
+	switch eps := endpoint.(type) {
 	case TCPEndpoint:
-		c, err := net.Dial("tcp", eps.HostPort())
-		//fmt.Printf("Result is %#v, %#v\n", c, err)
-		if err != nil {
-			log.Fatal(err)
-		}
-		hc.Stream = c
+		hc.Stream, err = eps.Open()
 		//fmt.Printf("Connection is open %#v\n", c)
 	case SerialEndpoint:
-		c := &serial.Config{Name: eps.Device, Baud: 115200}
-		sock, err := serial.OpenPort(c)
-		sock.Flush()
-		hc.Stream = sock
-		if err != nil {
-			log.Fatal(err)
-		}
+		hc.Stream, err = eps.Open()
 	default:
 		return nil, fmt.Errorf("NewHybridController doesn't know what to do with %T, %#v", eps, eps)
+	}
+	if err != nil {
+		return nil, err
 	}
 	hc.Reader = bufio.NewScanner(hc.Stream)
 
@@ -189,6 +230,14 @@ func NewHybridController(endpoint string) (*HybridController, error) {
 	// TODO: check out Peek whcih requires bufio.Reader
 
 	return hc, nil
+}
+
+func NewHybridControllerFromString(endpoint string) (*HybridController, error) {
+	endpointstruct, err := ParseEndpoint(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("NewHybridController cannot work with endpoint, %v", err)
+	}
+	return NewHybridController(endpointstruct)
 }
 
 // Command is a low-level command to send and receive envelopes.
@@ -252,44 +301,75 @@ func (hc *HybridController) Query(Type string) (*RecvEnvelope, error) {
 	return hc.Command(NewEnvelope(Type))
 }
 
-// FindServers currently implements mDNS Zeroconf discovery in the local
-// IP broadcast domain.
-// TODO: It is supposed to be extended for USB device discovery.
-func FindServers() string {
-	entriesCh := make(chan *mdns.ServiceEntry, 4)
-	res := make(chan string)
-	go func() {
-		for entry := range entriesCh {
-			log.Printf("FindServers: %v\n", entry)
+type Discovery struct {
+	entries chan *mdns.ServiceEntry
+	found   chan Endpoint
+}
 
-			resolvableIPv4 := false
-			ips, err := net.LookupIP(entry.Host)
-			if err != nil {
-				//fmt.Printf("Could not resolve Host, take instead %s\n", entry.AddrV4)
-			} else {
-				for _, ip := range ips {
-					if ip.String() == entry.AddrV4.String() {
-						resolvableIPv4 = true
-					}
+func (d *Discovery) checkServer() {
+	for entry := range d.entries {
+		log.Printf("CheckServer: %v\n", entry)
+
+		resolvableIPv4 := false
+		ips, err := net.LookupIP(entry.Host)
+		if err != nil {
+			//fmt.Printf("Could not resolve Host, take instead %s\n", entry.AddrV4)
+		} else {
+			for _, ip := range ips {
+				if ip.String() == entry.AddrV4.String() {
+					resolvableIPv4 = true
 				}
 			}
-			if resolvableIPv4 {
-				res <- "tcp://" + entry.Host
-			} else {
-				res <- "tcp://" + entry.AddrV4.String()
-			}
 		}
-	}()
+		if resolvableIPv4 {
+			d.found <- TCPEndpoint{entry.Host, defaultTcpPort}
+		} else {
+			d.found <- TCPEndpoint{entry.AddrV4.String(), defaultTcpPort}
+		}
+	}
+}
 
-	mdns.Lookup("_lucijsonl._tcp", entriesCh)
-	result := ""
+// FindServers currently implements mDNS Zeroconf discovery/detection in the local
+// IP broadcast domain.
+// TODO: It is supposed to be extended for USB device discovery.
+func NewDiscovery() Discovery {
+	d := Discovery{
+		make(chan *mdns.ServiceEntry, 4),
+		make(chan Endpoint),
+	}
+	go d.checkServer()
+	mdns.Lookup("_lucijsonl._tcp", d.entries)
+	return d
+}
+
+func (d *Discovery) Close() {
+	close(d.entries)
+	close(d.found)
+}
+
+func (d *Discovery) FindAll() []Endpoint {
+	var results []Endpoint
+	var result Endpoint
 	select {
-	case result = <-res:
-		log.Printf("FindServers: Decided for %s\n", result)
-		return result
+	case result = <-d.found:
+		log.Printf("FindAll: Found %v\n", result)
+		results = append(results, result)
 	case <-time.After(1 * time.Second):
 		log.Printf("FindServers: Timed out\n")
 	}
-	close(entriesCh)
-	return result
+	d.Close()
+	return results
+}
+
+func (d *Discovery) FindMaxOne() (result Endpoint, ok bool) {
+	select {
+	case result = <-d.found:
+		log.Printf("FindMaxOne: Decided for %v\n", result)
+		ok = true
+	case <-time.After(1 * time.Second):
+		log.Printf("FindMaxOne: Timed out\n")
+		ok = false
+	}
+	d.Close()
+	return result, ok
 }

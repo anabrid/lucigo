@@ -87,9 +87,9 @@ func (server *LuciGoWebServer) startWebSocket(w http.ResponseWriter, r *http.Req
 }
 
 func (server *LuciGoWebServer) webServerIdent(w http.ResponseWriter, r *http.Request) {
-	var proxy_target *string
-	if server.Hc != nil && len(server.Hc.Endpoint) != 0 {
-		proxy_target = &server.Hc.Endpoint
+	var proxy_target string
+	if server.Hc != nil && len(server.Hc.Endpoint.ToURL()) != 0 {
+		proxy_target = server.Hc.Endpoint.ToURL()
 	}
 
 	ident := map[string]interface{}{
@@ -100,7 +100,7 @@ func (server *LuciGoWebServer) webServerIdent(w http.ResponseWriter, r *http.Req
 			"build":    Build,
 		},
 		"proxy": map[string]string{
-			"target": *proxy_target,
+			"target": proxy_target,
 		},
 		"lucigui": map[string]interface{}{
 			"host_static_assets": is_lucigui_bundled(),
