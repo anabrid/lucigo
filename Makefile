@@ -14,7 +14,7 @@ endif
 LDFLAGS=-ldflags="$(XFLAGS)"
 
 
-build: build/lucigo $(shell find -iname \*.go -type f)
+build: $(shell find -iname \*.go -type f)
 	cd cmd/lucigo && go build $(LDFLAGS) -o ../../build/ .
     GOOS=windows GOARCH=amd64 cd cmd/lucigo &&  go build $(LDFLAGS) -o ../../build/ . # Windows x86 build
 #	term library currently doesnt (cross-)compile on mac
