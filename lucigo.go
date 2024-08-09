@@ -43,7 +43,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/mdns"
-	"github.com/tarm/serial"
+	"go.bug.st/serial"
 )
 
 // SendEnvelope is the outer structure of a message sent to LUCIDAC
@@ -136,12 +136,18 @@ func (e SerialEndpoint) ToURL() string {
 }
 
 func (e SerialEndpoint) Open() (io.ReadWriter, error) {
-	c := &serial.Config{Name: e.Device, Baud: 115200}
-	sock, err := serial.OpenPort(c)
+	c := &serial.Mode{BaudRate: 115200}
+	sock, err := serial.Open(e.Device, c)
 	if err != nil {
 		return nil, err
 	}
-	sock.Flush()
+	// Flushed with old serial port library (https://github.com/tarm/serial)
+	// which was replaced by https://github.com/bugst/go-serial because
+	// of better Mac OS X support (without needing CGO). However, this
+	// interface does not provide Flush() so we do it on the bufio.Scanner
+	// later.
+	//
+	// sock.Flush()
 	return sock, nil
 }
 
@@ -219,6 +225,7 @@ func NewHybridController(endpoint Endpoint) (*HybridController, error) {
 	hc.Reader = bufio.NewScanner(hc.Stream)
 
 	// Slurp any stuff still there, Serial can be weird
+	// TODO: Do this again.
 	/*
 		fmt.Println("Slurping...")
 		for hc.stream.Peek(1) {

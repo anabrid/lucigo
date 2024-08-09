@@ -59,6 +59,10 @@ func (server *LuciGoWebServer) luci2ws(ws *websocket.Conn, done chan struct{}) {
 }
 
 func (server *LuciGoWebServer) startWebSocket(w http.ResponseWriter, r *http.Request) {
+
+	// for the time being, accept all origins!
+	server.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+
 	c, err := server.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)

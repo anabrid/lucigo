@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/creack/goselect v0.1.2 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/miekg/dns v1.1.41 // indirect
 	github.com/nqd/flat v0.2.0 // indirect
@@ -18,5 +19,6 @@ require (
 	github.com/alecthomas/kong v0.9.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/mdns v1.0.5
+	go.bug.st/serial v1.6.2
 	golang.org/x/sys v0.21.0 // indirect
 )

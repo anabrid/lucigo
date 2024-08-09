@@ -14,11 +14,23 @@ endif
 LDFLAGS=-ldflags="$(XFLAGS)"
 
 
-build: $(shell find -iname \*.go -type f)
-	cd cmd/lucigo && go build $(LDFLAGS) -o ../../build/ .
-    GOOS=windows GOARCH=amd64 cd cmd/lucigo &&  go build $(LDFLAGS) -o ../../build/ . # Windows x86 build
-#	term library currently doesnt (cross-)compile on mac
-    #CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o build/ . # Mac OS X pre-arm64
+build: build-native build-win build-mac build-linux
+
+build-any:
+	cd cmd/lucigo && go build $(LDFLAGS) -o ../../build/$(OUTFILENAME) .
+
+build-native:
+	make build-any OUTFILENAME=lucigo-native
+
+build-linux:
+	make build-any GOOS=linux GOARCH=amd64 OUTFILENAME=lucigo-amd64-linux
+
+build-win:
+	make build-any GOOS=windows GOARCH=amd64 OUTFILENAME=lucigo-amd64-win.exe
+
+build-mac:
+	# amd64 covers also pre-amd64 while M1 arm is not backwards compatible
+	make build-any GOOS=darwin GOARCH=amd64 OUTFILENAME=lucigo-amd64-mac
 
 install:
 	cd cmd/lucigo
@@ -28,7 +40,8 @@ test:
 	go test .
 
 clean:
-	cd cmd/lucigo && go clean && rm -rf build/
+	rm -rf build/
+	cd cmd/lucigo && go clean
 
 LUCIGUI_PATH=cmd/lucigo/web-assets/lucigui
 download_lucigui:
@@ -38,4 +51,4 @@ download_lucigui:
 	unzip lucigui-bundle.zip && rm lucigui-bundle.zip
 
 
-.PHONY = install clean test
+.PHONY: install clean test build-any download_lucigui
